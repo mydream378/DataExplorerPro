@@ -66,26 +66,47 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded, isLoading }) => {
     const headers = Object.keys(rows[0]);
 
     const variables: DataVariable[] = headers.map(h => {
-      const values = rows.map(r => r[h]);
-      const nonNull = values.filter(v => v !== null && v !== undefined && v !== '');
-      let type: VariableType = 'unknown';
+      const rawValues = rows.map(r => r[h]);
+      const nonNull = rawValues.filter(v => v !== null && v !== undefined && String(v).trim() !== '');
       
+      let type: VariableType = 'categorical';
+      let processedValues = rawValues;
+
       if (nonNull.length > 0) {
-        const isNumeric = nonNull.every(v => typeof v === 'number' || (!isNaN(Number(v)) && typeof v !== 'boolean'));
-        type = isNumeric ? 'numerical' : 'categorical';
+        // More lenient detection: if > 50% of non-nulls are numeric, treat as numerical
+        const numericCount = nonNull.filter(v => !isNaN(Number(v)) && typeof v !== 'boolean').length;
+        const isNumericMajority = (numericCount / nonNull.length) > 0.5;
+
+        if (isNumericMajority) {
+          type = 'numerical';
+          processedValues = rawValues.map(v => {
+            if (v === null || v === undefined || String(v).trim() === '') return null;
+            const num = Number(v);
+            return isNaN(num) ? null : num;
+          });
+        }
       }
 
       return {
         name: h,
         type,
-        values,
-        stats: calculateSummaryStats(values, type)
+        values: processedValues,
+        stats: calculateSummaryStats(processedValues, type)
       };
+    });
+
+    // Update the row-based data to match processed variable values (casting)
+    const processedRows = rows.map((row, idx) => {
+      const newRow = { ...row };
+      variables.forEach(v => {
+        newRow[v.name] = v.values[idx];
+      });
+      return newRow;
     });
 
     onDataLoaded({
       filename,
-      data: rows,
+      data: processedRows,
       variables,
       numericalVariables: variables.filter(v => v.type === 'numerical').map(v => v.name),
       categoricalVariables: variables.filter(v => v.type === 'categorical').map(v => v.name)
@@ -93,7 +114,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded, isLoading }) => {
   };
 
   return (
-    <div className="max-w-xl mx-auto p-12 bg-white rounded-2xl border-2 border-dashed border-slate-200 hover:border-blue-400 transition-colors cursor-pointer group flex flex-col items-center justify-center space-y-4"
+    <div className="max-w-xl mx-auto p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 hover:border-blue-400 transition-all cursor-pointer group flex flex-col items-center justify-center space-y-4 shadow-sm hover:shadow-xl hover:-translate-y-1"
          onClick={() => fileInputRef.current?.click()}>
       <input 
         type="file" 
@@ -102,17 +123,17 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded, isLoading }) => {
         accept=".csv, .xlsx, .xls" 
         onChange={handleFileChange} 
       />
-      <div className="p-4 bg-blue-50 rounded-full group-hover:bg-blue-100 transition-colors">
-        <Upload className="w-8 h-8 text-blue-600" />
+      <div className="p-5 bg-blue-50 rounded-2xl group-hover:bg-blue-100 transition-colors shadow-inner">
+        <Upload className="w-10 h-10 text-blue-600" />
       </div>
       <div className="text-center">
-        <h3 className="text-lg font-semibold text-slate-800">Import Epidemiological Data</h3>
-        <p className="text-sm text-slate-500 mt-1">Upload CSV or Excel (.xlsx, .xls) files</p>
+        <h3 className="text-xl font-bold text-slate-800">Upload Your Dataset</h3>
+        <p className="text-sm text-slate-500 mt-2 max-w-xs">Supported formats: CSV, Excel (.xlsx, .xls). Data is processed entirely in your browser.</p>
       </div>
       {isLoading && (
-        <div className="flex items-center space-x-2 text-blue-600">
+        <div className="flex items-center space-x-3 text-blue-600 bg-blue-50 px-4 py-2 rounded-full">
           <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm font-medium">Processing Dataset...</span>
+          <span className="text-sm font-bold">Analyzing Statistics...</span>
         </div>
       )}
     </div>
