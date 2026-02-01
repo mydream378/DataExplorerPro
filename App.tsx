@@ -27,8 +27,8 @@ import {
   Sparkles,
   AlertTriangle,
   ArrowRight,
-  // Added missing Target icon import
-  Target
+  Target,
+  ClipboardCheck
 } from 'lucide-react';
 import { Dataset, DataVariable } from './types';
 import FileUpload from './components/FileUpload';
@@ -171,29 +171,92 @@ const App: React.FC = () => {
     setSelectedVarNames(new Set());
   };
 
+  /**
+   * Captures the correlation matrix as an editable HTML table for Microsoft Word.
+   */
+  const handleCopyTableForWord = async () => {
+    if (!filteredNumericNames.length) return;
+
+    let html = `<table border="1" style="border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 10pt;">`;
+    
+    // Header Row
+    html += `<tr style="background-color: #f1f5f9;">`;
+    html += `<th style="padding: 8px; border: 1px solid #cbd5e1;">Variable</th>`;
+    filteredNumericNames.forEach(name => {
+      html += `<th style="padding: 8px; border: 1px solid #cbd5e1;">${name}</th>`;
+    });
+    html += `</tr>`;
+
+    // Data Rows
+    filteredNumericNames.forEach(yVar => {
+      html += `<tr>`;
+      html += `<td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: bold; background-color: #f8fafc;">${yVar}</td>`;
+      filteredNumericNames.forEach(xVar => {
+        const res = correlationResults.find(r => r.x === xVar && r.y === yVar);
+        const val = res ? `${res.r.toFixed(3)}${res.significance}` : '-';
+        html += `<td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${val}</td>`;
+      });
+      html += `</tr>`;
+    });
+    html += `</table>`;
+
+    try {
+      const blob = new Blob([html], { type: 'text/html' });
+      const data = [new ClipboardItem({ 'text/html': blob })];
+      await navigator.clipboard.write(data);
+      alert('Table copied! You can now paste directly into Microsoft Word.');
+    } catch (err) {
+      console.error('Failed to copy table', err);
+      // Fallback for browsers that don't support ClipboardItem for HTML
+      const tempElement = document.createElement('div');
+      tempElement.innerHTML = html;
+      tempElement.style.position = 'fixed';
+      tempElement.style.left = '-9999px';
+      document.body.appendChild(tempElement);
+      const range = document.createRange();
+      range.selectNode(tempElement);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(range);
+      document.execCommand('copy');
+      document.body.removeChild(tempElement);
+      alert('Table copied using fallback. You can now paste into Word.');
+    }
+  };
+
   const handleDownload = async (ref: React.RefObject<HTMLDivElement>, filename: string) => {
     if (!ref.current) return;
     try {
       setLoading(true);
       const element = ref.current;
-      const table = element.querySelector('table');
+      
+      const target = element.querySelector('table') || element;
+      const fullWidth = target.scrollWidth;
+      const fullHeight = target.scrollHeight;
+
+      const ratio = (fullWidth * 2 > 12000 || fullHeight * 2 > 12000) ? 1 : 2;
       
       const options = { 
         backgroundColor: '#ffffff', 
         quality: 1,
-        pixelRatio: 2,
-        width: table ? table.scrollWidth + 100 : element.scrollWidth + 100,
-        height: table ? table.scrollHeight + 100 : element.scrollHeight + 100,
-        style: { transform: 'none', overflow: 'visible', margin: '0' }
+        pixelRatio: ratio,
+        width: fullWidth + 40,
+        height: fullHeight + 40,
+        style: { 
+          transform: 'none', 
+          overflow: 'visible', 
+          margin: '0',
+          padding: '20px'
+        }
       };
 
-      const dataUrl = await htmlToImage.toPng(element, options);
+      const dataUrl = await htmlToImage.toPng(target, options);
       const link = document.createElement('a');
       link.download = `${filename}.png`;
       link.href = dataUrl;
       link.click();
     } catch (err) {
       console.error('Failed to export image', err);
+      alert('Export failed. The matrix may be too large for your browser to process as a single image.');
     } finally {
       setLoading(false);
     }
@@ -541,7 +604,10 @@ const App: React.FC = () => {
                       <div className="px-5 text-xs font-black text-slate-500 min-w-[60px] text-center">{Math.round(matrixScale * 100)}%</div>
                       <button onClick={() => setMatrixScale(Math.min(2.0, matrixScale + 0.1))} className="p-2.5 hover:bg-white rounded-xl transition-all text-slate-600 shadow-sm"><Plus className="w-4 h-4" /></button>
                     </div>
-                    <button onClick={() => handleDownload(heatmapRef, 'correlation-matrix')} className="flex items-center space-x-3 px-8 py-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-xl shadow-blue-100 text-sm font-black transition-all active:scale-95"><Download className="w-4 h-4" /><span>Export High-Res PNG</span></button>
+                    <div className="flex items-center space-x-3">
+                      <button onClick={handleCopyTableForWord} className="flex items-center space-x-3 px-6 py-3 bg-indigo-50 text-indigo-700 rounded-2xl hover:bg-indigo-100 shadow-sm text-sm font-black transition-all active:scale-95 border border-indigo-100"><ClipboardCheck className="w-4 h-4" /><span>Copy Table for Word</span></button>
+                      <button onClick={() => handleDownload(heatmapRef, 'correlation-matrix')} className="flex items-center space-x-3 px-8 py-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-xl shadow-blue-100 text-sm font-black transition-all active:scale-95"><Download className="w-4 h-4" /><span>Export High-Res PNG</span></button>
+                    </div>
                   </div>
                   <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
                     <div ref={heatmapRef} className="p-10 overflow-auto custom-scrollbar" style={{ maxHeight: '75vh' }}>
