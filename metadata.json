@@ -1,0 +1,5 @@
+{
+  "name": "EpiExplorer - Epidemiology Data Tool",
+  "description": "A preliminary data exploration tool for epidemiologists featuring automated variable classification, univariate distributions, summary statistics, and significance-aware correlation matrices with P-value analysis.",
+  "requestFramePermissions": []
+}
